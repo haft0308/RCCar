@@ -1,0 +1,383 @@
+<html>
+<head>
+<title>BluetoothService.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #0000ff;}
+.s3 { color: #808080; font-style: italic;}
+.s4 { color: #008000; font-weight: bold;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+BluetoothService.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>kr.or.bukedu.khs.rccar;
+
+<span class="s0">import </span>android.annotation.SuppressLint;
+<span class="s0">import </span>android.app.Activity;
+<span class="s0">import </span>android.bluetooth.BluetoothAdapter;
+<span class="s0">import </span>android.bluetooth.BluetoothDevice;
+<span class="s0">import </span>android.bluetooth.BluetoothSocket;
+<span class="s0">import </span>android.content.Intent;
+<span class="s0">import </span>android.os.Handler;
+<span class="s0">import </span>android.os.Message;
+<span class="s0">import </span>android.util.Log;
+
+<span class="s0">import </span>java.io.IOException;
+<span class="s0">import </span>java.io.InputStream;
+<span class="s0">import </span>java.io.OutputStream;
+<span class="s0">import </span>java.util.UUID;
+
+<span class="s0">public class </span>BluetoothService {
+    BluetoothAdapter btAdapter;
+    <span class="s0">int </span>REQUEST_CODE_ENABLE_BT = <span class="s2">1001</span>;
+    <span class="s0">int </span>REQUEST_CODE_CONNECT_DEVICE = <span class="s2">1002</span>;
+
+    Activity mActivity;
+
+    ConnectThread mConnectThread;
+    ConnectedThread mConnectedThread;
+
+    <span class="s3">//spp프로파일사용</span>
+    UUID MY_UUID = UUID.fromString(<span class="s4">&quot;00001101-0000-1000-8000-00805F9B34FB&quot;</span>);
+    Handler handler;
+    <span class="s0">int </span>MESSAGE_LOG=<span class="s2">3</span>;
+    <span class="s0">int </span>MESSAGE_CONNECT_FAIL =<span class="s2">2</span>;
+    <span class="s0">int </span>MESSAGE_CONNECT_SUCCESS = <span class="s2">1</span>;
+    <span class="s0">int </span>MESSAGE_RECEIVED_DATA = <span class="s2">0</span>;
+
+    <span class="s0">int </span>mState;
+    <span class="s0">int </span>STATE_NONE=<span class="s2">0</span>;
+    <span class="s0">int </span>STATE_LISTEN = <span class="s2">1</span>;
+    <span class="s0">int </span>STATE_CONNECTING=<span class="s2">2</span>;
+    <span class="s0">int </span>STATE_CONNECTED=<span class="s2">3</span>;
+
+    BluetoothService(Activity ac, Handler handler)
+    {
+        <span class="s3">//print(&quot;BluetoothService() 생성자, btAdapter의 값을 얻음&quot;);</span>
+        btAdapter = BluetoothAdapter.getDefaultAdapter();
+        mActivity = ac;
+        <span class="s0">this</span>.handler = handler;
+    }
+    <span class="s0">boolean </span>getDeviceState()
+    {
+        <span class="s0">if </span>(btAdapter == <span class="s0">null</span>)
+        {
+            <span class="s3">// 하드웨어적으로 BT가 없음.</span>
+            <span class="s0">return false</span>;
+        }
+        <span class="s0">else</span>
+            <span class="s0">return true</span>;
+    }
+    <span class="s0">void </span>enableBluetooth()
+    {
+        print(<span class="s4">&quot;enableBluetooth()&quot;</span>);
+        <span class="s0">if </span>( btAdapter.isEnabled())
+        {
+            print(<span class="s4">&quot;BT가 활성화 되어 있는 상태&quot;</span>);
+            print(<span class="s4">&quot;주변의 BT기기 찾으러 갑시다&quot;</span>);
+            scanDevice();
+        }
+        <span class="s0">else</span>
+        {
+            Intent intent = <span class="s0">new </span>Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            mActivity.startActivityForResult(intent, REQUEST_CODE_ENABLE_BT);
+        }
+    }
+    <span class="s0">void </span>scanDevice()
+    {
+        print(<span class="s4">&quot;scanDevice() 주변의 BT기기들의 리스트를 구성후 선택을 통해 연결할 장치를 선택해옴.&quot;</span>);
+        Intent intent = <span class="s0">new </span>Intent(mActivity, DeviceListActivity.<span class="s0">class</span>);
+        mActivity.startActivityForResult(intent, REQUEST_CODE_CONNECT_DEVICE);
+    }
+    <span class="s0">void </span>getDeviceInfo(String address)
+    {
+        print(<span class="s4">&quot;getDeviceInfo()&quot;</span>+address);
+        BluetoothDevice device = btAdapter.getRemoteDevice(address);<span class="s3">//어드레스값을 통해 device값얻음</span>
+        connect(device);
+    }
+    <span class="s3">//동기화 키워드</span>
+    <span class="s3">//자원의 값을 신뢰하기 위해, 자원을 잘 분배해서 사용하기 위해.</span>
+    <span class="s3">//동기화 방법</span>
+    <span class="s3">//1. 함수명 앞에 synchronized키워드 붙이기</span>
+    <span class="s3">//2. synchronized ( device) 블럭</span>
+<span class="s3">//    {</span>
+<span class="s3">//</span>
+<span class="s3">//    }</span>
+    <span class="s3">//3. notify</span>
+
+    String getState()
+    {
+        String stateStr=<span class="s4">&quot;STATE_NONE&quot;</span>;
+        <span class="s0">switch </span>(mState)
+        {
+            <span class="s0">case </span><span class="s2">0</span>:
+                stateStr=<span class="s4">&quot;STATE_NONE&quot;</span>;
+                <span class="s0">break</span>;
+            <span class="s0">case </span><span class="s2">1</span>:
+                stateStr = <span class="s4">&quot;STATE_LISTEN&quot;</span>;
+                <span class="s0">break</span>;
+
+            <span class="s0">case </span><span class="s2">2</span>:
+                stateStr=<span class="s4">&quot;STATE_CONNECTING&quot;</span>;
+                <span class="s0">break</span>;
+            <span class="s0">case </span><span class="s2">3</span>:
+                stateStr = <span class="s4">&quot;STATE_CONNECTED&quot;</span>;
+                <span class="s0">break</span>;
+        }
+        <span class="s0">return </span>stateStr;
+    }
+    <span class="s0">void </span>setState(<span class="s0">int </span>state)
+    {
+        print(<span class="s4">&quot;setState() &quot;</span>+ mState+<span class="s4">&quot;-&gt;&quot;</span>+state);
+        mState = state;
+    }
+    <span class="s3">//connectThread생성.</span>
+    <span class="s0">synchronized void </span>connect(BluetoothDevice device)
+    {
+        <span class="s3">//쓰레드의 상태를 체크해서, 연결시도중이면 초기화.</span>
+        <span class="s0">if </span>(getState().equals(<span class="s4">&quot;STATE_CONNECTING&quot;</span>) ) {
+            <span class="s0">if </span>(mConnectThread != <span class="s0">null</span>) {
+                mConnectThread.cancel();
+                mConnectThread = <span class="s0">null</span>;
+            }
+        }
+
+        <span class="s0">if </span>( mConnectedThread != <span class="s0">null</span>)
+        {
+            mConnectedThread.cancel();
+            mConnectedThread = <span class="s0">null</span>;
+        }
+        <span class="s3">//연결시작</span>
+        <span class="s3">//connectThread 생성, 실행.</span>
+        mConnectThread = <span class="s0">new </span>ConnectThread(device);
+        mConnectThread.start();
+        setState(STATE_CONNECTING);<span class="s3">//쓰레드의 상태 지정.</span>
+
+    }
+
+    <span class="s0">synchronized void </span>connected(BluetoothSocket socket)
+    {
+        <span class="s3">//쓰레드변수 초기화.</span>
+        start();
+        <span class="s3">//스트림을 통해 데이터 송수신.</span>
+        <span class="s3">//connectedThread 생성, 실행.</span>
+        mConnectedThread = <span class="s0">new </span>ConnectedThread(socket);
+        mConnectedThread.start();
+        setState(STATE_CONNECTED);
+    }
+    <span class="s0">class </span>ConnectThread <span class="s0">extends </span>Thread{
+        BluetoothDevice mDevice;
+        @SuppressLint(<span class="s4">&quot;MissingPermission&quot;</span>) BluetoothSocket mmSocket;
+
+        ConnectThread(BluetoothDevice device)
+        {
+            mDevice = device;
+            <span class="s3">//RFComm : 안드로이드 API가 지원하는 블루투스 소켓의 가장 일반적인 유형</span>
+            <span class="s3">//          블루투스를 통한 연결 지향 스트리밍 전송</span>
+            <span class="s3">//          = SPP시리얼 데이터 전송</span>
+
+            <span class="s0">try </span>{
+
+                   mmSocket     = mDevice.createRfcommSocketToServiceRecord(MY_UUID);
+                print(<span class="s4">&quot;소켓 잘 만들었음&quot;</span>);
+            } <span class="s0">catch </span>(IOException e) {
+                print(<span class="s4">&quot;소켓 만들다가 에러발생.&quot;</span>);
+                <span class="s3">//사용자에게 연결에러 발생을 알려주고, 다시 연결작업을 시도하도록 유도.</span>
+                <span class="s3">//유저에게 화면으로 알려주자.</span>
+                <span class="s3">//서브쓰레드에서 UI작업은 안됨. UI쓰레드(Main쓰레드)에게 작업 요청.</span>
+                <span class="s3">//메세지로 메인쓰레드에게 요청하겠음.</span>
+                <span class="s3">//쓰레드 간의 통신은 Handler이용.</span>
+                Message msg = handler.obtainMessage();
+                msg.what = MESSAGE_CONNECT_FAIL;
+                handler.sendMessage(msg);
+
+                <span class="s3">//handler.obtainMessage(MESSAGE_CONNECT_FAIL).sendToTarget();</span>
+
+                e.printStackTrace();
+
+            }
+        }
+        @SuppressLint(<span class="s4">&quot;MissingPermission&quot;</span>)
+        @Override
+        <span class="s0">public void </span>run() {
+            <span class="s0">super</span>.run();
+            print(<span class="s4">&quot;이 시점에도 장치를 찾고 있다면, 멈추시오, 연결이 잘 안됩니다.&quot;</span>);
+            btAdapter.cancelDiscovery();<span class="s3">//주변의 장치를 찾는 것을 중단시킴.</span>
+            <span class="s0">try </span>{
+                mmSocket.connect();
+                print(<span class="s4">&quot;소켓으로 연결 성공.&quot;</span>);
+            } <span class="s0">catch </span>(IOException e) {
+                print(<span class="s4">&quot;소켓연결실패&quot;</span>);
+                handler.obtainMessage(MESSAGE_CONNECT_FAIL).sendToTarget();
+                e.printStackTrace();
+
+                <span class="s3">//에러가 나서 소켓 정리함.</span>
+                connectionFailed();
+
+                <span class="s0">try </span>{
+                    mmSocket.close();
+                    print(<span class="s4">&quot;소켓닫기 성공.&quot;</span>);
+                } <span class="s0">catch </span>(IOException ioException) {
+                    ioException.printStackTrace();
+                    print(<span class="s4">&quot;소켓닫기 실패&quot;</span>);
+                }
+
+                print(<span class="s4">&quot;쓰레드 초기화&quot;</span>);
+                BluetoothService.<span class="s0">this</span>.start();
+                <span class="s0">return</span>;
+            }
+
+            <span class="s3">//연결 성공. 동작 정의</span>
+            <span class="s0">synchronized </span>(BluetoothService.<span class="s0">this</span>)
+            {
+                mConnectThread = <span class="s0">null</span>;
+            }
+            <span class="s3">//연결이 되었으니, 소켓으로부터 (1:1회선연결)스트림정보 얻어 데이터 송수신하러가자.</span>
+            connected(mmSocket);
+
+        }
+        <span class="s0">public void </span>cancel()
+        {
+            print(<span class="s4">&quot;ConnectThread cancel()&quot;</span>);
+            <span class="s0">try </span>{
+                mmSocket.close();
+                print(<span class="s4">&quot;소켓 잘 닫음.&quot;</span>);
+            } <span class="s0">catch </span>(IOException e) {
+                e.printStackTrace();
+                print(<span class="s4">&quot;소켓 닫기 에러.&quot;</span>);
+            }
+        }
+    }<span class="s3">//ConnectThread</span>
+
+    <span class="s0">synchronized void </span>start()
+    {
+        print(<span class="s4">&quot;start. 쓰레드변수 초기화&quot;</span>);
+        <span class="s0">if </span>( mConnectThread != <span class="s0">null</span>)
+        {
+            mConnectThread.cancel();
+            mConnectThread = <span class="s0">null</span>;
+        }
+        <span class="s0">if</span>( mConnectedThread != <span class="s0">null</span>)
+        {
+            mConnectedThread.cancel();
+            mConnectedThread = <span class="s0">null</span>;
+        }
+    }
+    <span class="s0">void </span>connectionFailed()
+    {
+        print(<span class="s4">&quot;connectionFailed()&quot;</span>);
+        setState(STATE_LISTEN);
+    }
+    <span class="s0">class </span>ConnectedThread <span class="s0">extends </span>Thread
+    {
+        BluetoothSocket mmSocket;
+        InputStream mmInput;
+        OutputStream mmOutput;
+
+        ConnectedThread(BluetoothSocket socket)
+        {
+            mmSocket = socket;
+            <span class="s0">try </span>{
+                mmInput = mmSocket.getInputStream();
+                print(<span class="s4">&quot;소켓으로부터 input스트림을 얻음.&quot;</span>);
+                mmOutput = mmSocket.getOutputStream();<span class="s3">//출력스트림.</span>
+                print(<span class="s4">&quot;소켓으로부터 output스트림을 얻음.&quot;</span>);
+                <span class="s3">//유저에게 연결되었음을 알려줌. 서브쓰레드라, UI쓰레드에게 요청.</span>
+                handler.obtainMessage(MESSAGE_CONNECT_SUCCESS).sendToTarget();
+
+
+            } <span class="s0">catch </span>(IOException e) {
+                print(<span class="s4">&quot;스트림 정보를 얻지 못함.&quot;</span>);
+                <span class="s3">//유저에게 연결되었음을 알려줌. 서브쓰레드라, UI쓰레드에게 요청.</span>
+                handler.obtainMessage(MESSAGE_CONNECT_FAIL).sendToTarget();
+
+                e.printStackTrace();
+            }
+        }
+
+
+        @Override
+        <span class="s0">public void </span>run() {
+            <span class="s0">super</span>.run();
+            <span class="s3">//스트림 정보가 있으니, 아두이노가 보내주는 데이터</span>
+            <span class="s3">// (ex. 아두이노의 조도센서 값을 읽어서 안드로이드에게 보내줌)</span>
+            <span class="s0">byte</span>[] buffer = <span class="s0">new byte</span>[<span class="s2">256</span>];
+            <span class="s0">int </span>byte_size;
+            <span class="s0">while </span>(<span class="s0">true</span>)
+            {
+                <span class="s0">try </span>{
+                    byte_size = mmInput.read(buffer);
+                    print(<span class="s4">&quot;잘 읽었음.buffer를. 아두이노가 보내주는 데이터를 읽어 담았음.&quot;</span>);
+                    handler.obtainMessage(MESSAGE_RECEIVED_DATA, byte_size,<span class="s2">0</span>, buffer).sendToTarget();
+                } <span class="s0">catch </span>(IOException e) {
+
+                    print(<span class="s4">&quot;읽다가 에러발생&quot;</span>);
+                    connectionFailed();
+                    e.printStackTrace();
+                    <span class="s0">break</span>;<span class="s3">//에러발생해서 무한루프 종료.=&gt;쓰레드를 종료시킴.</span>
+                }
+                <span class="s0">try </span>{
+                    Thread.sleep(<span class="s2">1000</span>);
+                } <span class="s0">catch </span>(InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        }
+        <span class="s0">public void </span>cancel()
+        {
+            print(<span class="s4">&quot;connectedThread cancel()&quot;</span>);
+            <span class="s0">try </span>{
+                mmSocket.close();
+            } <span class="s0">catch </span>(IOException e) {
+                e.printStackTrace();
+            }
+        }<span class="s3">//cancel()</span>
+        <span class="s0">public void </span>write(<span class="s0">byte</span>[] out)
+        {
+            <span class="s0">try </span>{
+                mmOutput.write(out);
+                print(<span class="s4">&quot;write()데이터 송신 성공&quot;</span>+out[<span class="s2">0</span>]);
+            } <span class="s0">catch </span>(IOException e) {
+                print(<span class="s4">&quot;write()데이터 송신 실패&quot;</span>);
+                e.printStackTrace();
+            }
+        }
+
+    }<span class="s3">//ConnectedThread</span>
+    <span class="s0">void </span>write(String cmd)<span class="s3">//&quot;2&quot;</span>
+    {
+        <span class="s0">byte</span>[] out = cmd.getBytes();<span class="s3">//byte[]로 만들어줌.</span>
+        print(<span class="s4">&quot;out[0]=&quot;</span>+out[<span class="s2">0</span>]);<span class="s3">//49, 52</span>
+
+        ConnectedThread r;<span class="s3">//mConnectedThread변수의 값을 잠시 담을 임시변수</span>
+        <span class="s0">synchronized </span>(<span class="s0">this</span>) {<span class="s3">// 동기화처리 하고 copy함.</span>
+            <span class="s0">if </span>( getState().equals(<span class="s4">&quot;STATE_CONNECTED&quot;</span>))
+                r = mConnectedThread;
+            <span class="s0">else</span>
+                <span class="s0">return</span>;
+
+            r.write(out);
+        }
+    }
+    <span class="s0">void </span>stop()
+    {
+        print(<span class="s4">&quot;stop()&quot;</span>);
+        start();<span class="s3">//쓰레드변수 초기화</span>
+        setState(STATE_NONE);
+    }
+    <span class="s0">void </span>print(String str)
+    {
+        Log.d(<span class="s4">&quot;BluetoothService***&quot;</span>, str);
+        handler.obtainMessage(MESSAGE_LOG, <span class="s4">&quot;BluetoothService***&quot;</span>+str).sendToTarget();
+    }
+}
+</pre>
+</body>
+</html>

@@ -1,0 +1,467 @@
+<html>
+<head>
+<title>MainActivity.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #0000ff;}
+.s3 { color: #008000; font-weight: bold;}
+.s4 { color: #808080; font-style: italic;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+MainActivity.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>kr.or.bukedu.khs.rccar;
+
+<span class="s0">import </span>androidx.annotation.NonNull;
+<span class="s0">import </span>androidx.annotation.Nullable;
+<span class="s0">import </span>androidx.appcompat.app.AppCompatActivity;
+
+<span class="s0">import </span>android.content.Intent;
+<span class="s0">import </span>android.os.Bundle;
+<span class="s0">import </span>android.os.Handler;
+<span class="s0">import </span>android.os.Message;
+<span class="s0">import </span>android.speech.RecognitionListener;
+<span class="s0">import </span>android.speech.RecognizerIntent;
+<span class="s0">import </span>android.speech.SpeechRecognizer;
+<span class="s0">import </span>android.text.method.ScrollingMovementMethod;
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.view.View;
+<span class="s0">import </span>android.widget.Button;
+<span class="s0">import </span>android.widget.ImageButton;
+<span class="s0">import </span>android.widget.TextView;
+<span class="s0">import </span>android.widget.Toast;
+
+<span class="s0">import </span>com.pedro.library.AutoPermissions;
+<span class="s0">import </span>com.pedro.library.AutoPermissionsListener;
+
+<span class="s0">import </span>java.util.ArrayList;
+
+<span class="s0">public class </span>MainActivity <span class="s0">extends </span>AppCompatActivity {
+
+    Button connectBtn, disconnectedBtn;
+    ImageButton forwardBtn, backwardBtn, leftBtn, rightBtn, stopBtn;
+    TextView logTextView;
+    <span class="s0">int </span>REQUEST_CODE_PERMISSIONS = <span class="s2">1000</span>;
+    BluetoothService btService;
+
+    Handler handler;
+
+    String FORWARD = <span class="s3">&quot;0&quot;</span>;<span class="s4">//48</span>
+    String BACKWARD=<span class="s3">&quot;1&quot;</span>;<span class="s4">//49</span>
+    String LEFT=<span class="s3">&quot;2&quot;</span>;<span class="s4">//50</span>
+    String RIGHT=<span class="s3">&quot;3&quot;</span>;<span class="s4">//51</span>
+    String STOP=<span class="s3">&quot;4&quot;</span>;<span class="s4">//52</span>
+
+    <span class="s4">//음성인식을위한</span>
+    TextView textViewRecog;
+    SpeechRecognizer recognizer;
+    Intent recogIntent;
+
+    @Override
+    <span class="s0">protected void </span>onCreate(Bundle savedInstanceState) {
+        <span class="s0">super</span>.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        logTextView = findViewById(R.id.textView);
+        logTextView.setMovementMethod(<span class="s0">new </span>ScrollingMovementMethod());<span class="s4">//텍스트뷰가 drag되게.</span>
+        print(<span class="s3">&quot;onCreate()&quot;</span>);
+
+        AutoPermissions.Companion.loadAllPermissions(<span class="s0">this</span>, REQUEST_CODE_PERMISSIONS);
+        <span class="s4">//create();</span>
+
+    }
+
+    @Override
+    <span class="s0">public void </span>onRequestPermissionsResult(<span class="s0">int </span>requestCode, @NonNull String[] permissions, @NonNull <span class="s0">int</span>[] grantResults) {
+        <span class="s0">super</span>.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        AutoPermissions.Companion.parsePermissions(
+                <span class="s0">this</span>,
+                REQUEST_CODE_PERMISSIONS,
+                permissions,
+                <span class="s0">new </span>AutoPermissionsListener() {
+                    @Override
+                    <span class="s0">public void </span>onGranted(<span class="s0">int </span>i, String[] strings) {
+                        <span class="s4">//허락된 퍼미션</span>
+                        print(<span class="s3">&quot;onGranted()&quot;</span>);
+                    }
+
+                    @Override
+                    <span class="s0">public void </span>onDenied(<span class="s0">int </span>i, String[] strings) {
+
+                        <span class="s4">//거부된 퍼미션</span>
+                        print(<span class="s3">&quot;onDenied()&quot;</span>);
+                        <span class="s0">if </span>(strings.length == <span class="s2">0</span>)
+                        {
+                            <span class="s4">//거부된 권한이 없음.</span>
+                            create();<span class="s4">//거부된 권한이 없으므로, 정상적 동작.</span>
+                        }
+                        <span class="s0">else</span>
+                        {
+                            finish();
+                            print(<span class="s3">&quot;거부된 권한이 있음. 앱은 종료하겠음.&quot;</span>);
+
+                        }
+                    }
+                }
+        );
+
+
+    }
+
+    @Override
+    <span class="s0">protected void </span>onActivityResult(<span class="s0">int </span>requestCode, <span class="s0">int </span>resultCode, @Nullable Intent data) {
+        <span class="s0">super</span>.onActivityResult(requestCode, resultCode, data);
+        <span class="s0">if </span>( requestCode == btService.REQUEST_CODE_ENABLE_BT)
+        {
+            print(<span class="s3">&quot;BT가 활성화되고,&quot;</span>);
+            print(<span class="s3">&quot;주변의 기기를 찾으러 감.&quot;</span>);
+            btService.scanDevice();
+        }
+        <span class="s0">else if </span>( requestCode == btService.REQUEST_CODE_CONNECT_DEVICE)
+        {
+            print(<span class="s3">&quot;연결할 기기의 address값을 결과로 돌려받음&quot;</span>);
+            <span class="s4">//String address = data.putExtra(&quot;address&quot;);</span>
+            <span class="s0">if </span>( resultCode == RESULT_OK)
+            {
+                String str = data.getStringExtra(<span class="s3">&quot;data&quot;</span>);<span class="s4">//BTS100\n4E:BD:50:1F:3A:27</span>
+                print(str);
+<span class="s4">//                //BTS10000\n4E:BD:50:1F:3A:27</span>
+                String address = str.substring(str.length()-<span class="s2">17</span>);<span class="s4">//4E:BD:50:1F:3A:27</span>
+                btService.getDeviceInfo(address);<span class="s4">//필요한 address값 가지고 연결하러 감.</span>
+            }
+        }
+    }
+
+    <span class="s0">void </span>create()
+    {
+        <span class="s4">//블루투스 연결.</span>
+        getWidget();
+        Toast.makeText(<span class="s0">this</span>,
+                <span class="s3">&quot;연결 버튼을 눌러서 블루투스가 연결되고 난 후 컨트롤 하세요. &quot; </span>+
+                        <span class="s3">&quot;PIN 비밀번호는 1234 입니다.&quot;</span>, Toast.LENGTH_LONG).show();
+
+        handler = <span class="s0">new </span>MyHandler();
+
+        <span class="s0">if </span>( btService == <span class="s0">null</span>)
+        {
+            btService = <span class="s0">new </span>BluetoothService(<span class="s0">this</span>, handler);
+            print(<span class="s3">&quot;btService객체 생성.&quot;</span>);
+        }
+        connectBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                <span class="s4">//블루투스 연결하세요.</span>
+                <span class="s0">if </span>( btService.getDeviceState() == <span class="s0">true</span>)
+                {
+                    <span class="s4">//블루투스가 h/w지원</span>
+                    btService.enableBluetooth();
+                }
+                <span class="s0">else</span>
+                {
+                    print(<span class="s3">&quot;블루투스가 h/w지원x&quot;</span>);
+                    Toast.makeText(getApplicationContext()
+                            ,R.string.do_not_support_bt, Toast.LENGTH_LONG).show();
+                    finish();
+                }
+            }
+        });
+        disconnectedBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                <span class="s4">//블루투스 연결해제</span>
+                <span class="s0">if </span>( btService.getState().equals(<span class="s3">&quot;STATE_CONNECTED&quot;</span>))<span class="s4">//연결된 상태</span>
+                {
+                    sendCMD(STOP);<span class="s4">//동작을 stop시켜주고</span>
+                    btService.stop();<span class="s4">//블루투스를 연결해제.</span>
+                    Toast.makeText(getApplicationContext(),
+                            <span class="s3">&quot;블루투스 연결이 해제되었습니다.&quot;</span>,
+                            Toast.LENGTH_LONG).show();
+                }
+                <span class="s0">else</span>
+                    Toast.makeText(getApplicationContext(),
+                            <span class="s3">&quot;블루투스 연결 버튼을 눌러 블루투스를 연결하세요&quot;</span>,
+                            Toast.LENGTH_LONG).show();
+
+
+            }
+        });
+        control();
+        controlRecognize();<span class="s4">//음성인식으로 컨트롤.</span>
+
+    }
+    @Override
+    <span class="s0">protected void </span>onDestroy() {
+        <span class="s0">super</span>.onDestroy();
+        <span class="s0">if </span>( recognizer!= <span class="s0">null</span>) {
+            recognizer.stopListening();
+            recognizer.destroy();
+        }
+    }
+    <span class="s0">void </span>controlRecognize()
+    {
+        print(<span class="s3">&quot;controlRecognize&quot;</span>);
+        recognizer = SpeechRecognizer.createSpeechRecognizer(<span class="s0">this</span>);
+
+        recognizer.setRecognitionListener(<span class="s0">new </span>RecognitionListener() {
+            @Override
+            <span class="s0">public void </span>onReadyForSpeech(Bundle params) {
+                print(<span class="s3">&quot;onReadyForSpeech()&quot;</span>);
+                <span class="s4">//준비가 되면</span>
+            }
+
+            @Override
+            <span class="s0">public void </span>onBeginningOfSpeech() {
+                print(<span class="s3">&quot;onBeginningOfSpeech()&quot;</span>);
+                <span class="s4">//말이 시작될 때</span>
+            }
+
+            @Override
+            <span class="s0">public void </span>onRmsChanged(<span class="s0">float </span>rmsdB) {
+                <span class="s4">//The sound level in the audio stream has changed.</span>
+            }
+
+            @Override
+            <span class="s0">public void </span>onBufferReceived(<span class="s0">byte</span>[] buffer) {
+                print(<span class="s3">&quot;onBufferReceived()&quot;</span>);
+            }
+
+            @Override
+            <span class="s0">public void </span>onEndOfSpeech() {
+                print(<span class="s3">&quot;onEndOfSpeech()&quot;</span>);
+                <span class="s4">//말이 끝날때</span>
+            }
+
+            @Override
+            <span class="s0">public void </span>onError(<span class="s0">int </span>error) {
+                print(<span class="s3">&quot;onError()&quot;</span>+error);
+                <span class="s0">switch </span>(error) {
+                    <span class="s0">case </span><span class="s2">1</span>:
+                        <span class="s4">//Network operation timed out</span>
+                        print(<span class="s3">&quot; ERROR_NETWORK_TIMEOUT : 네트워크 타임아웃&quot;</span>);
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">2</span>:
+                        <span class="s4">//Other network related errors.</span>
+                        print(<span class="s3">&quot;ERROR_NETWORK :  그 외 네트워크 에러&quot;</span>);
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">3</span>:
+                        print( <span class="s3">&quot;ERROR_AUDIO :  녹음 에러&quot;</span>);
+                        <span class="s4">//Audio recording error</span>
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">4</span>:
+                        print(<span class="s3">&quot;ERROR_SERVER :  서버에서 에러를 보냄&quot;</span>);
+                        <span class="s4">//Server sends error status</span>
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">5</span>:
+                        print(<span class="s3">&quot;ERROR_CLIENT :  클라이언트 에러&quot;</span>);
+                        <span class="s4">//Other client side errors.</span>
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">6</span>:
+                        <span class="s4">//No speech input</span>
+                        print( <span class="s3">&quot;ERROR_SPEECH_TIMEOUT :  아무 음성도 듣지 못했을 때&quot;</span>);
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">7</span>:
+                        <span class="s4">//No recognition result matched</span>
+                        print( <span class="s3">&quot; ERROR_NO_MATCH :  적당한 결과를 찾지 못했을 때&quot;</span>);
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">8</span>:
+                        <span class="s4">//RecognitionService busy.</span>
+                        print( <span class="s3">&quot;ERROR_RECOGNIZER_BUSY :  RecognitionService가 바쁠 때&quot;</span>);
+                        <span class="s0">break</span>;
+                    <span class="s0">case </span><span class="s2">9</span>:
+                        <span class="s4">//Insufficient permissions</span>
+                        print(<span class="s3">&quot;ERROR_INSUFFICIENT_PERMISSIONS: uses-permission(즉 RECORD_AUDIO) 이 없을 때&quot;</span>);
+                        <span class="s0">break</span>;
+                    <span class="s0">default</span>:
+                        print( <span class="s3">&quot;기타에러...&quot;</span>);
+                }
+                setTextViewRecog(<span class="s3">&quot;error : &quot;</span>+error);
+                <span class="s4">//다시        음성인식해야함.</span>
+                startRecognize(recogIntent);
+            }
+
+            @Override
+            <span class="s0">public void </span>onResults(Bundle results) {
+
+                <span class="s4">//음성인식 결과를 알려줌.</span>
+                print(<span class="s3">&quot;onResults()&quot;</span>);
+                ArrayList&lt;String&gt; array =
+                        results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+
+                textViewRecog.append(<span class="s3">&quot;</span><span class="s0">\n</span><span class="s3">&quot;</span>+<span class="s3">&quot;인식된 단어는 &quot;</span>+array.size()+<span class="s3">&quot;개&quot;</span>);
+                <span class="s0">for</span>( String str:array)
+                {
+                    print(str);
+                    setTextViewRecog(str);<span class="s4">//음성인식결과창에 보여주기</span>
+                }
+
+
+
+                checkCmd(array);
+                startRecognize(recogIntent);
+            }
+
+            @Override
+            <span class="s0">public void </span>onPartialResults(Bundle partialResults) {
+                print(<span class="s3">&quot;onPartialResults()&quot;</span>);
+            }
+
+            @Override
+            <span class="s0">public void </span>onEvent(<span class="s0">int </span>eventType, Bundle params) {
+                print(<span class="s3">&quot;onEvent()&quot;</span>);
+            }
+        });
+
+        print(<span class="s3">&quot;음성인식 intent구성&quot;</span>);
+        recogIntent = <span class="s0">new </span>Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        recogIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+        recogIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE , <span class="s3">&quot;ko-KR&quot;</span>);<span class="s4">//인식할 언어.</span>
+        setTextViewRecog(<span class="s3">&quot;음성인식을 시작합니다&quot;</span>);
+
+        startRecognize(recogIntent);
+
+    }
+    <span class="s0">void </span>startRecognize(Intent recogIntent)
+    {
+        recognizer.startListening(recogIntent);
+        print(<span class="s3">&quot;음성인식 리스너 시작.&quot;</span>);
+        setTextViewRecog(<span class="s3">&quot;==============</span><span class="s0">\n</span><span class="s3">명령어를 말하시오.&quot;</span>);
+    }
+    <span class="s0">void </span>setTextViewRecog(String str)
+    {
+        textViewRecog.append(<span class="s3">&quot;</span><span class="s0">\n</span><span class="s3">&quot;</span>+str);
+    }
+    <span class="s0">void </span>checkCmd(ArrayList&lt;String&gt; array)<span class="s4">//정지, 전지,</span>
+    {
+        String[][] needString = {
+                {<span class="s3">&quot;전진&quot;</span>, <span class="s3">&quot;포워드&quot;</span>, <span class="s3">&quot;폴워드&quot;</span>, <span class="s3">&quot;고&quot;</span>, <span class="s3">&quot;가&quot;</span>, <span class="s3">&quot;앞으로&quot;</span>},<span class="s4">//(0,0) (0,1)</span>
+                {<span class="s3">&quot;후진&quot;</span>, <span class="s3">&quot;백워드&quot;</span>, <span class="s3">&quot;빽워드&quot;</span>, <span class="s3">&quot;빽&quot;</span>, <span class="s3">&quot;뒤로&quot; </span>},<span class="s4">//1</span>
+                {<span class="s3">&quot;좌회전&quot;</span>, <span class="s3">&quot;왼쪽&quot;</span>, <span class="s3">&quot;레프트&quot;</span>, <span class="s3">&quot;좌로&quot;</span>},<span class="s4">//2</span>
+                {<span class="s3">&quot;우회전&quot;</span>, <span class="s3">&quot;롸이트&quot;</span>, <span class="s3">&quot;라이트&quot;</span>,<span class="s3">&quot;오른쪽으로&quot;</span>},<span class="s4">//3</span>
+                {<span class="s3">&quot;정지&quot;</span>, <span class="s3">&quot;스탑&quot;</span>, <span class="s3">&quot;멈춰&quot;</span>, <span class="s3">&quot;그만&quot;</span>, <span class="s3">&quot;서&quot;</span>, <span class="s3">&quot;스톱&quot;</span>}<span class="s4">//4</span>
+        };
+
+        <span class="s0">for </span>( <span class="s0">int </span>i = <span class="s2">0</span>; i &lt; needString.length ; i++)<span class="s4">//5번.</span>
+        {
+            <span class="s0">for </span>( <span class="s0">int </span>j = <span class="s2">0</span>; j&lt;needString[i].length; j++)
+            {
+                <span class="s0">for </span>( <span class="s0">int </span>k = <span class="s2">0</span>; k&lt;array.size(); k++) {
+                    <span class="s0">if </span>(needString[i][j].equals(array.get(k)))
+                    {
+                        <span class="s4">//명령어 찾음.</span>
+                        <span class="s4">//i값이 명령어.</span>
+                        print(<span class="s3">&quot;명령어는&quot;</span>+i);
+                        sendCMD(String.valueOf(i));<span class="s4">//명령어 전송.</span>
+                        <span class="s0">return</span>;<span class="s4">//더이상 for돌지 않고 빠져나감.</span>
+                    }
+                }
+            }
+        }
+        Toast.makeText(<span class="s0">this</span>, <span class="s3">&quot;지원되지 않는 명령어입니다.&quot;</span>, Toast.LENGTH_LONG).show();
+
+    }    <span class="s4">//음성인식</span>
+    <span class="s0">void </span>control()
+    {
+        <span class="s4">//이미지 버튼 동작 정의</span>
+        print(<span class="s3">&quot;control()&quot;</span>);
+        forwardBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                <span class="s4">//전진 명령어 보내기//write, output스트림 사용.</span>
+                sendCMD(FORWARD);
+            }
+        });
+        backwardBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                sendCMD(BACKWARD);
+            }
+        });
+        leftBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                sendCMD(LEFT);<span class="s4">//&quot;2&quot;</span>
+            }
+        });
+        rightBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                sendCMD(RIGHT);
+            }
+        });
+        stopBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                sendCMD(STOP);
+            }
+        });
+    }
+    <span class="s0">void </span>sendCMD(String cmd)
+    {
+        btService.write(cmd);
+    }
+    <span class="s0">void </span>getWidget()
+    {
+        print(<span class="s3">&quot;getWidget()&quot;</span>);
+        connectBtn = findViewById(R.id.button);
+        disconnectedBtn = findViewById(R.id.button2);
+        forwardBtn = findViewById(R.id.imageButton2);
+        backwardBtn = findViewById(R.id.imageButton);
+        leftBtn = findViewById(R.id.imageButton3);
+        rightBtn = findViewById(R.id.imageButton4);
+        stopBtn = findViewById(R.id.imageButton5);
+        textViewRecog = findViewById(R.id.textView3);
+        <span class="s4">//인식된 결과 보여주는 창</span>
+        textViewRecog.setMovementMethod(<span class="s0">new </span>ScrollingMovementMethod());
+    }
+    <span class="s0">class </span>MyHandler <span class="s0">extends </span>Handler
+    {
+        <span class="s0">final int </span>MESSAGE_LOG = <span class="s2">3</span>;
+        <span class="s0">final int </span>MESSAGE_CONNECT_FAIL = <span class="s2">2</span>;
+        <span class="s0">final int </span>MESSAGE_CONNECT_SUCCESS = <span class="s2">1</span>;
+        <span class="s0">final int </span>MESSAGE_RECEIVED_DATA = <span class="s2">0</span>;
+        @Override
+        <span class="s0">public void </span>handleMessage(@NonNull Message msg) {
+            <span class="s0">super</span>.handleMessage(msg);
+            <span class="s0">switch </span>(msg.what)
+            {
+                <span class="s0">case </span>MESSAGE_CONNECT_FAIL:
+                    <span class="s4">//에러발생 토스트 보여줘.</span>
+                    Toast.makeText(getApplicationContext(),
+                            <span class="s3">&quot;블루투스 연결이 실패했습니다. &quot; </span>+
+                                    <span class="s3">&quot;잠시 뒤 다시 블루투스 연결 버튼을 눌러주세요.&quot;</span>,Toast.LENGTH_LONG).show();
+                    <span class="s0">break</span>;
+                <span class="s0">case </span>MESSAGE_CONNECT_SUCCESS:
+                    <span class="s4">//연결성공시에 토스트 보여줘.</span>
+                    Toast.makeText(getApplicationContext(),
+                            <span class="s3">&quot;블루투스 연결이 성공했습니다.&quot;</span>,Toast.LENGTH_LONG).show();
+
+                    <span class="s0">break</span>;
+                <span class="s0">case </span>MESSAGE_RECEIVED_DATA:
+                    <span class="s4">//조도센서 값을 텍스트뷰에 보여주고,</span>
+                    <span class="s4">//불을 키거나 끌수 있게 스위치 뷰를 배치해서 on/off동작 정의할수 도 있다.</span>
+                    <span class="s4">//아두이노로부터 받은 데이터를 처리하자.</span>
+                    print(<span class="s3">&quot;데이터 받음&quot;</span>+msg.arg1+<span class="s3">&quot;/&quot;</span>+msg.obj);
+
+                    <span class="s0">break</span>;
+                <span class="s0">case </span>MESSAGE_LOG:
+                    <span class="s4">//블루투스 서비스 클래스의 로그는 핸들러를 통해 전달 받음.</span>
+                    logTextView.append(<span class="s3">&quot;</span><span class="s0">\n</span><span class="s3">&quot;</span>+msg.obj);
+                    <span class="s0">break</span>;
+            }
+
+        }
+    }
+    <span class="s0">void </span>print(String str)
+    {
+        Log.d(<span class="s3">&quot;MainActivity***&quot;</span>, str);
+        logTextView.append(<span class="s3">&quot;</span><span class="s0">\n</span><span class="s3">&quot;</span>+str);
+    }
+}</pre>
+</body>
+</html>

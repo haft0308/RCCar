@@ -1,0 +1,201 @@
+<html>
+<head>
+<title>DeviceListActivity.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #008000; font-weight: bold;}
+.s4 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+DeviceListActivity.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>kr.or.bukedu.khs.rccar;
+
+<span class="s0">import </span>androidx.appcompat.app.AppCompatActivity;
+
+<span class="s0">import </span>android.annotation.SuppressLint;
+<span class="s0">import </span>android.bluetooth.BluetoothAdapter;
+<span class="s0">import </span>android.bluetooth.BluetoothDevice;
+<span class="s0">import </span>android.content.BroadcastReceiver;
+<span class="s0">import </span>android.content.Context;
+<span class="s0">import </span>android.content.Intent;
+<span class="s0">import </span>android.content.IntentFilter;
+<span class="s0">import </span>android.os.Bundle;
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.view.View;
+<span class="s0">import </span>android.view.Window;
+<span class="s0">import </span>android.widget.AdapterView;
+<span class="s0">import </span>android.widget.ArrayAdapter;
+<span class="s0">import </span>android.widget.Button;
+<span class="s0">import </span>android.widget.ListView;
+<span class="s0">import </span>android.widget.TextView;
+
+<span class="s0">import </span>java.util.Set;
+
+<span class="s0">public class </span>DeviceListActivity <span class="s0">extends </span>AppCompatActivity {
+
+    Button scanBtn;
+    TextView titlePairedDevices, titleNewDevices;
+    ListView pairedDevicesListView, newDevicesListView;
+    BluetoothAdapter mBtAdapter;
+
+    BroadcastReceiver receiver;
+
+    ArrayAdapter&lt;String&gt; mNewDevicesArrayAdapter;
+
+    @Override
+    <span class="s0">protected void </span>onCreate(Bundle savedInstanceState) {
+        <span class="s0">super</span>.onCreate(savedInstanceState);
+        <span class="s2">//윈도우 셋팅 관련 작업은 setContentView()보다 먼저 호출되어야.</span>
+        requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
+
+        setContentView(R.layout.activity_device_list);
+
+        print(<span class="s3">&quot;onCreate()&quot;</span>);
+        setResult(RESULT_CANCELED);<span class="s2">//액티비티 응답에 대한 default값을 지정.</span>
+                                    <span class="s2">//사용자가 기기를 선택한 경우에 RESULT_OK로 응답을 줄 예정.</span>
+
+        titlePairedDevices = findViewById(R.id.textView5);
+        titleNewDevices=findViewById(R.id.textView6);
+        pairedDevicesListView = findViewById(R.id.pairedList);
+        newDevicesListView=findViewById(R.id.newList);
+        scanBtn = findViewById(R.id.button3);
+
+        <span class="s2">//리스트뷰 구성하기</span>
+        <span class="s2">//이미 페어링된 bt 기기들의 리스트를 구성하자.</span>
+        <span class="s2">//보여지는 것은 리스트뷰가 담당.</span>
+        <span class="s2">//데이터의 어댑터가 리스트에서 다루는 데이터를 관리.</span>
+        <span class="s2">//둘이 연동할 수 있게 하자.</span>
+
+        ArrayAdapter&lt;String&gt; pairedDevicesArrayAdapter = <span class="s0">new </span>ArrayAdapter&lt;String&gt;(
+                <span class="s0">this</span>, R.layout.device_name
+        );<span class="s2">//45:46:12:45:</span>
+
+        <span class="s2">//이미 페어링된 기기들의 정보를 받아서 보여주자.</span>
+
+        pairedDevicesListView.setAdapter(pairedDevicesArrayAdapter);
+        mBtAdapter = BluetoothAdapter.getDefaultAdapter();
+        @SuppressLint(<span class="s3">&quot;MissingPermission&quot;</span>) Set&lt;BluetoothDevice&gt; set = mBtAdapter.getBondedDevices();<span class="s2">//이미 페어링되었던 기기들의 set</span>
+        <span class="s0">if </span>( set.size() == <span class="s4">0</span>)
+        {
+            print(<span class="s3">&quot;페어링된 기기가 없다.&quot;</span>);
+            pairedDevicesArrayAdapter.add(<span class="s3">&quot;페어링된 장치가 없음&quot;</span>);
+        }
+        <span class="s0">else </span>{
+            print(<span class="s3">&quot;페어링된 기기들이 있다.&quot;</span>);
+            <span class="s0">for </span>(BluetoothDevice device : set) {
+                String str = device.getName() + <span class="s3">&quot;</span><span class="s0">\n</span><span class="s3">&quot; </span>+ device.getAddress();
+                pairedDevicesArrayAdapter.add(str);
+            }
+        }
+
+        mNewDevicesArrayAdapter = <span class="s0">new </span>ArrayAdapter&lt;&gt;(
+                <span class="s0">this</span>, R.layout.device_name
+        );
+
+        newDevicesListView.setAdapter(mNewDevicesArrayAdapter);
+
+        setTitle(<span class="s3">&quot;기기를 선택하거나, 찾아서 선택하세요.&quot;</span>);
+        scanBtn.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                setTitle(<span class="s3">&quot;기기를 찾는 중...&quot;</span>);
+                v.setVisibility(View.GONE);<span class="s2">//기기 찾기 버튼 안 보이게.</span>
+                titlePairedDevices.setVisibility(View.VISIBLE);
+                titleNewDevices.setVisibility(View.VISIBLE);
+                setProgressBarIndeterminateVisibility(<span class="s0">true</span>);
+                doDiscovery();<span class="s2">//주변의 BT장치를 찾자.</span>
+            }
+        });
+
+        <span class="s2">//시스템이 이벤트가 발생하면, 브로드캐스트 형태로 보내주는데,</span>
+        <span class="s2">//내가 원하는 브로드캐스트를 intentFilter로 등록해두고,</span>
+        <span class="s2">//브로드캐스트 리시버를 만들어서 브로드캐스트를 받는다.</span>
+        receiver = <span class="s0">new </span>BroadcastReceiver() {
+            @Override
+            <span class="s0">public void </span>onReceive(Context context, Intent intent) {
+                <span class="s0">if </span>( intent.getAction().equals(BluetoothDevice.ACTION_FOUND))
+                {
+                    print(<span class="s3">&quot;주변의 BT기기 하나 찾음&quot;</span>);
+                    <span class="s2">//찾은 기기 정보를 두번째 새 기기들의 리스트뷰에 아이템 추가.</span>
+                    BluetoothDevice device =
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    String str = device.getName() + <span class="s3">&quot;</span><span class="s0">\n</span><span class="s3">&quot;</span>+device.getAddress();
+                    <span class="s0">if </span>( device.getBondState()!=BluetoothDevice.BOND_BONDED) {
+                        print(<span class="s3">&quot;이미 페어링된 기기가 아니라면, 새 기기리스트에 넣어줘.&quot;</span>);
+                        mNewDevicesArrayAdapter.add(str);<span class="s2">//BTS100\n11:55:44:12:46</span>
+                    }
+                }
+                <span class="s0">else if </span>( intent.getAction().equals(BluetoothAdapter.ACTION_DISCOVERY_FINISHED))
+                {
+                    print(<span class="s3">&quot;주변의 기기들을 다 찾았다고 브로드캐스트 받음.&quot;</span>);
+                    <span class="s0">if</span>(mNewDevicesArrayAdapter.getCount() == <span class="s4">0</span>)
+                    {
+                        mNewDevicesArrayAdapter.add(<span class="s3">&quot;기기가 없음&quot;</span>);
+                        print(<span class="s3">&quot;주변에 연결가능한 새 기기가 없음.&quot;</span>);
+                    }
+
+                    setTitle(<span class="s3">&quot;연결할 기기를 선택해주세요.&quot;</span>);
+                    setProgressBarIndeterminateVisibility(<span class="s0">false</span>);
+                    <span class="s2">//유저가 기기 선택하기를 유도.</span>
+                }
+
+
+            }
+        };
+        IntentFilter intentFilter = <span class="s0">new </span>IntentFilter(BluetoothDevice.ACTION_FOUND);<span class="s2">//주변의 장치 찾음.</span>
+        intentFilter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+
+        registerReceiver(receiver, intentFilter);<span class="s2">//내가 받고자 하는 브로드캐스트 등록.</span>
+
+        <span class="s2">//아이템을 선택하면 어드레스 값 가져다가 응답으로 돌려줌.</span>
+        ItemClickListener itemClickListener = <span class="s0">new </span>ItemClickListener();
+        pairedDevicesListView.setOnItemClickListener(itemClickListener);
+        newDevicesListView.setOnItemClickListener(itemClickListener);
+
+    }<span class="s2">//onCreate()</span>
+
+    <span class="s0">class </span>ItemClickListener <span class="s0">implements </span>AdapterView.OnItemClickListener {
+        @Override
+        <span class="s0">public void </span>onItemClick(AdapterView&lt;?&gt; parent, View view, <span class="s0">int </span>position, <span class="s0">long </span>id) {
+            String str = (String)parent.getItemAtPosition(position);
+            Intent intent = <span class="s0">new </span>Intent();
+            intent.putExtra(<span class="s3">&quot;data&quot;</span>, str);<span class="s2">//BTS100\n45:54:12:45;</span>
+            setResult(RESULT_OK, intent);
+            finish();<span class="s2">///DeviceListActivity종료해주어야 응답결과가 main으로 전달됨.</span>
+        }
+    }
+    @Override
+    <span class="s0">protected void </span>onDestroy() {
+        <span class="s0">super</span>.onDestroy();
+        <span class="s0">if </span>( receiver != <span class="s0">null</span>)<span class="s2">//등록된 경우만.</span>
+            unregisterReceiver(receiver);<span class="s2">//등록한 브로드캐스트를 해제</span>
+    }
+
+    <span class="s0">void </span>doDiscovery()
+    {
+        print(<span class="s3">&quot;doDiscovery()&quot;</span>);
+        <span class="s2">//</span>
+        <span class="s0">if </span>(mBtAdapter.isDiscovering())<span class="s2">//이제 찾으러 왔는데, 찾고 있다면,</span>
+        {
+            print(<span class="s3">&quot;이전에 기기를 찾던 동작이 이어지고 있어, 취소함.&quot;</span>);
+            mBtAdapter.cancelDiscovery();
+        }
+        mBtAdapter.startDiscovery();
+        print(<span class="s3">&quot;이제서야, 주변기기 찾기 시작됨.&quot;</span>);
+
+    }
+    <span class="s0">void </span>print(String str)
+    {
+        Log.d(<span class="s3">&quot;DeviceListActivity***&quot;</span>, str);
+    }
+}</pre>
+</body>
+</html>
