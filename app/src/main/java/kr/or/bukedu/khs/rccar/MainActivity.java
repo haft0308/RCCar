@@ -75,9 +75,10 @@ public class MainActivity extends AppCompatActivity {
 
                     @Override
                     public void onDenied(int i, String[] strings) {
-
+                        //permission
                         //거부된 퍼미션
                         print("onDenied()");
+                        print("ko");
                         if (strings.length == 0)
                         {
                             //거부된 권한이 없음.
